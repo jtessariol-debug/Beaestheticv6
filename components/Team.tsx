@@ -1,6 +1,4 @@
-
 import React, { useState } from 'react';
-import { TEAM_DATA } from '../constants';
 import { TeamMember } from '../types';
 
 const TeamModal: React.FC<{ member: TeamMember; onClose: () => void }> = ({ member, onClose }) => {
@@ -25,7 +23,7 @@ const TeamModal: React.FC<{ member: TeamMember; onClose: () => void }> = ({ memb
 };
 
 
-const Team: React.FC = () => {
+const Team: React.FC<{ team: TeamMember[] }> = ({ team }) => {
     const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
 
     const openModal = (member: TeamMember) => {
@@ -42,11 +40,11 @@ const Team: React.FC = () => {
         <section id="equipo" className="py-20 lg:py-32 bg-brand-beige-dark">
             <div className="container mx-auto px-6">
                 <div className="text-center mb-12 fade-up-on-scroll opacity-0">
-                    <h2 className="font-serif text-4xl lg:text-5xl text-brand-brown mb-4">Equipo Médico de Excelencia</h2>
-                    <p className="font-sans text-brand-gray max-w-2xl mx-auto">Un colectivo de especialistas de renombre internacional, unidos por una pasión compartida por la precisión, el arte y el cuidado del paciente.</p>
+                    <h2 className="font-serif text-4xl lg:text-5xl text-brand-brown mb-4">Equipo Medico de Excelencia</h2>
+                    <p className="font-sans text-brand-gray max-w-2xl mx-auto">Un colectivo de especialistas de renombre internacional, unidos por una pasion compartida por la precision, el arte y el cuidado del paciente.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 fade-up-on-scroll opacity-0" style={{ animationDelay: '0.2s' }}>
-                    {TEAM_DATA.map(member => (
+                    {team.map(member => (
                         <div key={member.id} className="text-center group cursor-pointer" onClick={() => openModal(member)}>
                             <div className="relative overflow-hidden aspect-[3/4]">
                                 <img src={member.imageUrl} alt={member.name} className="w-full h-full object-cover object-top grayscale transition-all duration-500 ease-custom-ease group-hover:grayscale-0" />

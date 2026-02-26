@@ -1,10 +1,9 @@
-
 import React from 'react';
 
-const WhatsAppButton: React.FC = () => {
+const WhatsAppButton: React.FC<{ phone: string }> = ({ phone }) => {
     return (
         <a
-            href="https://api.whatsapp.com/send?phone=18096392490"
+            href={`https://api.whatsapp.com/send?phone=${phone}`}
             target="_blank"
             rel="noopener noreferrer"
             className="fixed bottom-6 right-6 bg-green-500 text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg z-40 transform transition-transform duration-300 hover:scale-110"

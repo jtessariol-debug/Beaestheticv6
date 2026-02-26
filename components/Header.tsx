@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import logo from '../Fotos de servicios/Logo.png';
+import { NavItem } from '../content';
 
-const Header: React.FC = () => {
+const Header: React.FC<{ navItems: NavItem[] }> = ({ navItems }) => {
   const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
@@ -20,14 +20,6 @@ const Header: React.FC = () => {
       element.scrollIntoView({ behavior: 'smooth' });
     }
   };
-
-  const navItems = [
-    { id: 'quienes-somos', label: 'Quienes Somos' },
-    { id: 'servicios', label: 'Servicios' },
-    { id: 'tecnologia', label: 'Tecnología' },
-    { id: 'equipo', label: 'Equipo' },
-    { id: 'contacto', label: 'Contacto' },
-  ];
 
   return (
     <header
@@ -60,6 +52,9 @@ const Header: React.FC = () => {
                 <span className="absolute bottom-0 left-0 w-0 h-px bg-brand-brown transition-all duration-300 group-hover:w-full"></span>
               </button>
             ))}
+            <a href="#admin" className="text-brand-brown/80 text-xs uppercase tracking-[0.2em] hover:text-brand-brown">
+              Admin
+            </a>
           </nav>
 
           <div className="md:hidden">
@@ -72,4 +67,3 @@ const Header: React.FC = () => {
 };
 
 export default Header;
-
