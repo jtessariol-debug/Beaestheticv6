@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Service, ServiceCategory } from './types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -262,6 +263,35 @@ export const uploadImageToProductStorage = async (
 };
 
 export { getErrorMessage };
+
+const stableStringHash = (value: string): number => {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+        hash = (hash << 5) - hash + value.charCodeAt(index);
+        hash |= 0;
+    }
+    return hash;
+};
+
+export type RealtimeService = Service & {
+    sourceId: string;
+    isRealtime: true;
+};
+
+export const mapProductToRealtimeService = (product: Partial<Product>): RealtimeService => {
+    const sourceId = String(product.id ?? '');
+    const hashedId = Math.abs(stableStringHash(sourceId || `${product.name ?? ''}-${product.created_at ?? ''}`)) || 1;
+
+    return {
+        id: -hashedId,
+        sourceId,
+        isRealtime: true,
+        name: String(product.name ?? 'Servicio'),
+        category: ServiceCategory.ArmonizacionFacial,
+        imageUrl: normalizeProductImageUrl(String(product.image_url ?? '')),
+        description: String(product.description ?? ''),
+    };
+};
 
 export type Product = {
     id: string;

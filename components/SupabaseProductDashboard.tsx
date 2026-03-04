@@ -43,6 +43,7 @@ const SupabaseProductDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
+    const [isDraftDirty, setIsDraftDirty] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isLocalMode, setIsLocalMode] = useState<boolean>(!supabase);
 
@@ -112,6 +113,44 @@ const SupabaseProductDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (!supabase) {
+            return;
+        }
+
+        const channel = supabase
+            .channel('products-dashboard-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    const deletedId = String((payload.old as { id?: string } | null)?.id ?? '');
+                    if (!deletedId) {
+                        return;
+                    }
+                    setProducts((prev) => prev.filter((item) => item.id !== deletedId));
+                    setSelectedId((prev) => (prev === deletedId ? null : prev));
+                    return;
+                }
+
+                const nextRow = normalizeProduct(payload.new as Partial<Product>);
+                setProducts((prev) => {
+                    if (payload.eventType === 'INSERT') {
+                        return [nextRow, ...prev.filter((item) => item.id !== nextRow.id)];
+                    }
+
+                    const exists = prev.some((item) => item.id === nextRow.id);
+                    if (!exists) {
+                        return [nextRow, ...prev];
+                    }
+                    return prev.map((item) => (item.id === nextRow.id ? nextRow : item));
+                });
+            })
+            .subscribe();
+
+        return () => {
+            void supabase.removeChannel(channel);
+        };
+    }, []);
+
+    useEffect(() => {
         if (!selectedProduct) return;
         setDraft({
             name: selectedProduct.name,
@@ -120,7 +159,20 @@ const SupabaseProductDashboard: React.FC = () => {
             image_url: normalizeProductImageUrl(selectedProduct.image_url ?? ''),
             stock: selectedProduct.stock ?? 0,
         });
+        setIsDraftDirty(false);
     }, [selectedProduct]);
+
+    useEffect(() => {
+        if (!selectedId || !isDraftDirty || saving || uploadingImage) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            void saveProduct({ silent: true });
+        }, 700);
+
+        return () => window.clearTimeout(timer);
+    }, [draft, selectedId, isDraftDirty, saving, uploadingImage]);
 
     const createProduct = async () => {
         if (!supabase) {
@@ -137,6 +189,7 @@ const SupabaseProductDashboard: React.FC = () => {
             setProducts(next);
             persistLocalProducts(next);
             setSelectedId(newProduct.id);
+            setIsDraftDirty(false);
             return;
         }
         setSaving(true);
@@ -158,8 +211,9 @@ const SupabaseProductDashboard: React.FC = () => {
                 return;
             }
             const newProduct = normalizeProduct(data as Product);
-            setProducts((prev) => [newProduct, ...prev]);
+            setProducts((prev) => [newProduct, ...prev.filter((item) => item.id !== newProduct.id)]);
             setSelectedId(newProduct.id);
+            setIsDraftDirty(false);
         } catch (insertCrash) {
             setError(getErrorMessage(insertCrash));
         } finally {
@@ -167,41 +221,53 @@ const SupabaseProductDashboard: React.FC = () => {
         }
     };
 
-    const saveProduct = async () => {
-        if (!selectedId) return;
+    const saveProduct = async (options?: { silent?: boolean }) => {
+        if (!selectedId || saving || uploadingImage) return;
         const normalizedImageUrl = normalizeProductImageUrl(draft.image_url);
+        const normalizedDraft = {
+            name: draft.name.trim(),
+            price: parseNumericInput(String(draft.price)),
+            description: draft.description,
+            image_url: normalizedImageUrl,
+            stock: parseNumericInput(String(draft.stock)),
+        };
+
+        if (
+            selectedProduct &&
+            selectedProduct.name === normalizedDraft.name &&
+            Number(selectedProduct.price ?? 0) === normalizedDraft.price &&
+            (selectedProduct.description ?? '') === normalizedDraft.description &&
+            normalizeProductImageUrl(selectedProduct.image_url ?? '') === normalizedDraft.image_url &&
+            Number(selectedProduct.stock ?? 0) === normalizedDraft.stock
+        ) {
+            setIsDraftDirty(false);
+            return;
+        }
 
         if (!supabase) {
             const next = products.map((item) =>
                 item.id === selectedId
                     ? {
                           ...item,
-                          name: draft.name,
-                          price: draft.price,
-                          description: draft.description,
-                          image_url: normalizedImageUrl,
-                          stock: draft.stock,
+                          ...normalizedDraft,
                       }
                     : item
             );
             setProducts(next);
             persistLocalProducts(next);
-            setDraft((prev) => ({ ...prev, image_url: normalizedImageUrl }));
+            setDraft(normalizedDraft);
+            setIsDraftDirty(false);
             return;
         }
 
         setSaving(true);
-        setError(null);
+        if (!options?.silent) {
+            setError(null);
+        }
         try {
             const { data, error: updateError } = await supabase
                 .from('products')
-                .update({
-                    name: draft.name,
-                    price: draft.price,
-                    description: draft.description,
-                    image_url: normalizedImageUrl,
-                    stock: draft.stock,
-                })
+                .update(normalizedDraft)
                 .eq('id', selectedId)
                 .select('*')
                 .single();
@@ -218,6 +284,7 @@ const SupabaseProductDashboard: React.FC = () => {
                 image_url: updated.image_url ?? '',
                 stock: updated.stock ?? 0,
             });
+            setIsDraftDirty(false);
         } catch (updateCrash) {
             setError(getErrorMessage(updateCrash));
         } finally {
@@ -233,6 +300,7 @@ const SupabaseProductDashboard: React.FC = () => {
             persistLocalProducts(next);
             setSelectedId(null);
             setDraft(emptyDraft);
+            setIsDraftDirty(false);
             return;
         }
         setSaving(true);
@@ -246,6 +314,7 @@ const SupabaseProductDashboard: React.FC = () => {
             setProducts((prev) => prev.filter((item) => item.id !== selectedId));
             setSelectedId(null);
             setDraft(emptyDraft);
+            setIsDraftDirty(false);
         } catch (deleteCrash) {
             setError(getErrorMessage(deleteCrash));
         } finally {
@@ -273,6 +342,7 @@ const SupabaseProductDashboard: React.FC = () => {
                 const next = products.map((item) => (item.id === selectedId ? { ...item, image_url: nextUrl } : item));
                 setProducts(next);
                 persistLocalProducts(next);
+                setIsDraftDirty(false);
                 return;
             }
 
@@ -302,6 +372,7 @@ const SupabaseProductDashboard: React.FC = () => {
                 image_url: updated.image_url ?? '',
                 stock: updated.stock ?? 0,
             });
+            setIsDraftDirty(false);
         } catch (uploadCrash) {
             setError(getErrorMessage(uploadCrash));
         } finally {
@@ -398,7 +469,10 @@ const SupabaseProductDashboard: React.FC = () => {
                                         <input
                                             className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.name}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                                            onChange={(e) => {
+                                                setDraft((prev) => ({ ...prev, name: e.target.value }));
+                                                setIsDraftDirty(true);
+                                            }}
                                         />
                                     </div>
                                     <div>
@@ -407,7 +481,10 @@ const SupabaseProductDashboard: React.FC = () => {
                                             type="number"
                                             className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.price}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, price: parseNumericInput(e.target.value) }))}
+                                            onChange={(e) => {
+                                                setDraft((prev) => ({ ...prev, price: parseNumericInput(e.target.value) }));
+                                                setIsDraftDirty(true);
+                                            }}
                                         />
                                     </div>
                                     <div>
@@ -416,7 +493,10 @@ const SupabaseProductDashboard: React.FC = () => {
                                             type="number"
                                             className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.stock}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, stock: parseNumericInput(e.target.value) }))}
+                                            onChange={(e) => {
+                                                setDraft((prev) => ({ ...prev, stock: parseNumericInput(e.target.value) }));
+                                                setIsDraftDirty(true);
+                                            }}
                                         />
                                     </div>
                                     <div>
@@ -453,7 +533,10 @@ const SupabaseProductDashboard: React.FC = () => {
                                         <textarea
                                             className="w-full min-h-[140px] rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.description}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+                                            onChange={(e) => {
+                                                setDraft((prev) => ({ ...prev, description: e.target.value }));
+                                                setIsDraftDirty(true);
+                                            }}
                                         />
                                     </div>
                                 </div>

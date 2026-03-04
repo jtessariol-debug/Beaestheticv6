@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Service, ServiceCategory } from '../types';
+import { Product, RealtimeService, mapProductToRealtimeService, supabase } from '../supabase';
 import ServiceModal from './ServiceModal';
 
 const ServiceCard: React.FC<{ service: Service; onClick: () => void; onOpenDetails: () => void }> = ({ service, onClick, onOpenDetails }) => {
@@ -50,6 +51,63 @@ const ServiceCard: React.FC<{ service: Service; onClick: () => void; onOpenDetai
 const Services: React.FC<{ services: Service[] }> = ({ services }) => {
     const [activeCategory, setActiveCategory] = useState<ServiceCategory | 'all'>('all');
     const [selectedService, setSelectedService] = useState<Service | null>(null);
+    const [liveServices, setLiveServices] = useState<RealtimeService[] | null>(null);
+
+    useEffect(() => {
+        if (!supabase) {
+            setLiveServices(null);
+            return;
+        }
+
+        let active = true;
+        const loadProducts = async () => {
+            const { data, error } = await supabase
+                .from('products')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (!active || error) {
+                return;
+            }
+            const mapped = (data ?? []).map((item) => mapProductToRealtimeService(item as Product));
+            setLiveServices(mapped);
+        };
+
+        void loadProducts();
+
+        const channel = supabase
+            .channel('services-products-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+                if (payload.eventType === 'DELETE') {
+                    const deletedId = String((payload.old as { id?: string } | null)?.id ?? '');
+                    if (!deletedId) {
+                        return;
+                    }
+                    setLiveServices((prev) => (prev ?? []).filter((item) => item.sourceId !== deletedId));
+                    return;
+                }
+
+                const mapped = mapProductToRealtimeService(payload.new as Partial<Product>);
+                setLiveServices((prev) => {
+                    const base = prev ?? [];
+                    if (payload.eventType === 'INSERT') {
+                        return [mapped, ...base.filter((item) => item.sourceId !== mapped.sourceId)];
+                    }
+                    const exists = base.some((item) => item.sourceId === mapped.sourceId);
+                    if (!exists) {
+                        return [mapped, ...base];
+                    }
+                    return base.map((item) => (item.sourceId === mapped.sourceId ? mapped : item));
+                });
+            })
+            .subscribe();
+
+        return () => {
+            active = false;
+            void supabase.removeChannel(channel);
+        };
+    }, []);
+
+    const servicesForView = liveServices && liveServices.length > 0 ? liveServices : services;
 
     const openModal = (service: Service) => {
         setSelectedService(service);
@@ -57,6 +115,10 @@ const Services: React.FC<{ services: Service[] }> = ({ services }) => {
     };
 
     const openDetailsTab = (service: Service) => {
+        if ((service as RealtimeService).isRealtime) {
+            openModal(service);
+            return;
+        }
         const baseUrl = `${window.location.origin}${window.location.pathname}`;
         const detailsUrl = `${baseUrl}#servicio/${service.id}`;
         window.open(detailsUrl, '_blank', 'noopener,noreferrer');
@@ -83,10 +145,10 @@ const Services: React.FC<{ services: Service[] }> = ({ services }) => {
 
     const filteredServices = useMemo(() => {
         if (activeCategory === 'all') {
-            return services;
+            return servicesForView;
         }
-        return services.filter(service => service.category === activeCategory);
-    }, [activeCategory, services]);
+        return servicesForView.filter(service => service.category === activeCategory);
+    }, [activeCategory, servicesForView]);
 
     return (
         <>
