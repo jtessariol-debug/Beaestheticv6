@@ -7,6 +7,7 @@ import {
     emptyTechnologyTemplate,
     emptyTestimonialTemplate,
 } from '../content';
+import { supabase } from '../supabase';
 import { ServiceCategory } from '../types';
 
 type AdminDashboardProps = {
@@ -30,6 +31,60 @@ const inputClass =
     'w-full rounded-md border border-brand-brown/20 bg-white px-3 py-2 text-sm text-brand-brown focus:border-brand-brown focus:outline-none';
 const textareaClass = `${inputClass} min-h-[130px]`;
 
+type ImageUploadInputProps = {
+    label: string;
+    value: string;
+    onChange: (next: string) => void;
+    onFileDrop: (file: File) => void;
+    uploading?: boolean;
+};
+
+const ImageUploadInput: React.FC<ImageUploadInputProps> = ({ label, value, onChange, onFileDrop, uploading = false }) => {
+    const [isDragging, setIsDragging] = useState(false);
+
+    const handleFiles = (files: FileList | null) => {
+        const file = files?.[0];
+        if (file) {
+            onFileDrop(file);
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">{label}</label>
+            <input className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+            <label
+                onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(event) => {
+                    event.preventDefault();
+                    setIsDragging(false);
+                    handleFiles(event.dataTransfer.files);
+                }}
+                className={`flex cursor-pointer items-center justify-center rounded-md border-2 border-dashed px-4 py-4 text-sm transition-colors ${
+                    isDragging
+                        ? 'border-brand-brown bg-brand-beige text-brand-brown'
+                        : 'border-brand-brown/30 text-brand-gray hover:border-brand-brown/60'
+                }`}
+            >
+                <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                        handleFiles(event.target.files);
+                        event.currentTarget.value = '';
+                    }}
+                />
+                {uploading ? 'Subiendo imagen...' : 'Drop files aqui o haz click para subir una imagen'}
+            </label>
+        </div>
+    );
+};
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onReset }) => {
     const [activeTab, setActiveTab] = useState<DashboardTab>('general');
     const [serviceSearch, setServiceSearch] = useState('');
@@ -38,6 +93,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(content.team[0]?.id ?? null);
     const [selectedTestimonialId, setSelectedTestimonialId] = useState<number | null>(content.testimonials[0]?.id ?? null);
     const [selectedLocationId, setSelectedLocationId] = useState<string | null>(content.locations[0]?.id ?? null);
+    const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
+    const [imageUploadError, setImageUploadError] = useState<string | null>(null);
 
     const updateContent = (updater: (prev: SiteContent) => SiteContent) => {
         onChange(updater(content));
@@ -59,6 +116,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
     const selectedTeamMember = content.team.find((member) => member.id === selectedTeamId) ?? null;
     const selectedTestimonial = content.testimonials.find((testimonial) => testimonial.id === selectedTestimonialId) ?? null;
     const selectedLocation = content.locations.find((location) => location.id === selectedLocationId) ?? null;
+
+    const uploadImageForField = async (fieldKey: string, file: File, onUploaded: (url: string) => void) => {
+        if (!file.type.startsWith('image/')) {
+            setImageUploadError('Solo se permiten archivos de imagen.');
+            return;
+        }
+
+        setImageUploadError(null);
+        setUploadingFieldKey(fieldKey);
+
+        if (!supabase) {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+                reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+                reader.readAsDataURL(file);
+            }).catch(() => '');
+
+            setUploadingFieldKey(null);
+            if (!dataUrl) {
+                setImageUploadError('No se pudo procesar la imagen seleccionada.');
+                return;
+            }
+            onUploaded(dataUrl);
+            return;
+        }
+
+        const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+        const path = `content/${Date.now()}-${safeName}`;
+        const { error } = await supabase.storage.from('products').upload(path, file, { upsert: false });
+
+        setUploadingFieldKey(null);
+        if (error) {
+            setImageUploadError(error.message);
+            return;
+        }
+
+        const { data } = supabase.storage.from('products').getPublicUrl(path);
+        onUploaded(data.publicUrl);
+    };
 
     return (
         <main className="min-h-screen bg-brand-beige-dark py-8">
@@ -95,6 +192,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                         </div>
                     </div>
                 </div>
+                {imageUploadError && (
+                    <p className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{imageUploadError}</p>
+                )}
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
                     <aside className="rounded-xl border border-brand-brown/10 bg-white p-3">
@@ -189,20 +289,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                                         </div>
                                         {content.hero.slides.map((slide, index) => (
                                             <div key={`hero-slide-${index}`} className="md:col-span-2">
-                                                <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Imagen hero {index + 1}</label>
-                                                <input
-                                                    className={inputClass}
+                                                <ImageUploadInput
+                                                    label={`Imagen hero ${index + 1}`}
                                                     value={slide}
-                                                    onChange={(e) =>
+                                                    uploading={uploadingFieldKey === `hero-slide-${index}`}
+                                                    onChange={(nextValue) =>
                                                         updateContent((prev) => ({
                                                             ...prev,
                                                             hero: {
                                                                 ...prev.hero,
                                                                 slides: prev.hero.slides.map((item, currentIndex) =>
-                                                                    currentIndex === index ? e.target.value : item
+                                                                    currentIndex === index ? nextValue : item
                                                                 ),
                                                             },
                                                         }))
+                                                    }
+                                                    onFileDrop={(file) =>
+                                                        void uploadImageForField(`hero-slide-${index}`, file, (url) =>
+                                                            updateContent((prev) => ({
+                                                                ...prev,
+                                                                hero: {
+                                                                    ...prev.hero,
+                                                                    slides: prev.hero.slides.map((item, currentIndex) =>
+                                                                        currentIndex === index ? url : item
+                                                                    ),
+                                                                },
+                                                            }))
+                                                        )
                                                     }
                                                 />
                                             </div>
@@ -227,15 +340,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                                             />
                                         </div>
                                         <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Imagen URL</label>
-                                            <input
-                                                className={inputClass}
+                                            <ImageUploadInput
+                                                label="Imagen URL"
                                                 value={content.philosophy.imageUrl}
-                                                onChange={(e) =>
+                                                uploading={uploadingFieldKey === 'philosophy-image'}
+                                                onChange={(nextValue) =>
                                                     updateContent((prev) => ({
                                                         ...prev,
-                                                        philosophy: { ...prev.philosophy, imageUrl: e.target.value },
+                                                        philosophy: { ...prev.philosophy, imageUrl: nextValue },
                                                     }))
+                                                }
+                                                onFileDrop={(file) =>
+                                                    void uploadImageForField('philosophy-image', file, (url) =>
+                                                        updateContent((prev) => ({
+                                                            ...prev,
+                                                            philosophy: { ...prev.philosophy, imageUrl: url },
+                                                        }))
+                                                    )
                                                 }
                                             />
                                         </div>
@@ -431,19 +552,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                                                     </select>
                                                 </div>
                                                 <div className="md:col-span-2">
-                                                    <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Imagen URL</label>
-                                                    <input
-                                                        className={inputClass}
+                                                    <ImageUploadInput
+                                                        label="Imagen URL"
                                                         value={selectedService.imageUrl}
-                                                        onChange={(e) =>
+                                                        uploading={uploadingFieldKey === `service-image-${selectedService.id}`}
+                                                        onChange={(nextValue) =>
                                                             updateContent((prev) => ({
                                                                 ...prev,
                                                                 services: prev.services.map((service) =>
                                                                     service.id === selectedService.id
-                                                                        ? { ...service, imageUrl: e.target.value }
+                                                                        ? { ...service, imageUrl: nextValue }
                                                                         : service
                                                                 ),
                                                             }))
+                                                        }
+                                                        onFileDrop={(file) =>
+                                                            void uploadImageForField(
+                                                                `service-image-${selectedService.id}`,
+                                                                file,
+                                                                (url) =>
+                                                                    updateContent((prev) => ({
+                                                                        ...prev,
+                                                                        services: prev.services.map((service) =>
+                                                                            service.id === selectedService.id
+                                                                                ? { ...service, imageUrl: url }
+                                                                                : service
+                                                                        ),
+                                                                    }))
+                                                            )
                                                         }
                                                     />
                                                 </div>
@@ -557,19 +693,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Imagen URL</label>
-                                                    <input
-                                                        className={inputClass}
+                                                    <ImageUploadInput
+                                                        label="Imagen URL"
                                                         value={selectedTechnology.imageUrl}
-                                                        onChange={(e) =>
+                                                        uploading={uploadingFieldKey === `technology-image-${selectedTechnology.id}`}
+                                                        onChange={(nextValue) =>
                                                             updateContent((prev) => ({
                                                                 ...prev,
                                                                 technologies: prev.technologies.map((technology) =>
                                                                     technology.id === selectedTechnology.id
-                                                                        ? { ...technology, imageUrl: e.target.value }
+                                                                        ? { ...technology, imageUrl: nextValue }
                                                                         : technology
                                                                 ),
                                                             }))
+                                                        }
+                                                        onFileDrop={(file) =>
+                                                            void uploadImageForField(
+                                                                `technology-image-${selectedTechnology.id}`,
+                                                                file,
+                                                                (url) =>
+                                                                    updateContent((prev) => ({
+                                                                        ...prev,
+                                                                        technologies: prev.technologies.map((technology) =>
+                                                                            technology.id === selectedTechnology.id
+                                                                                ? { ...technology, imageUrl: url }
+                                                                                : technology
+                                                                        ),
+                                                                    }))
+                                                            )
                                                         }
                                                     />
                                                 </div>
@@ -683,19 +834,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                                                     />
                                                 </div>
                                                 <div className="md:col-span-2">
-                                                    <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Imagen URL</label>
-                                                    <input
-                                                        className={inputClass}
+                                                    <ImageUploadInput
+                                                        label="Imagen URL"
                                                         value={selectedTeamMember.imageUrl}
-                                                        onChange={(e) =>
+                                                        uploading={uploadingFieldKey === `team-image-${selectedTeamMember.id}`}
+                                                        onChange={(nextValue) =>
                                                             updateContent((prev) => ({
                                                                 ...prev,
                                                                 team: prev.team.map((member) =>
                                                                     member.id === selectedTeamMember.id
-                                                                        ? { ...member, imageUrl: e.target.value }
+                                                                        ? { ...member, imageUrl: nextValue }
                                                                         : member
                                                                 ),
                                                             }))
+                                                        }
+                                                        onFileDrop={(file) =>
+                                                            void uploadImageForField(`team-image-${selectedTeamMember.id}`, file, (url) =>
+                                                                updateContent((prev) => ({
+                                                                    ...prev,
+                                                                    team: prev.team.map((member) =>
+                                                                        member.id === selectedTeamMember.id
+                                                                            ? { ...member, imageUrl: url }
+                                                                            : member
+                                                                    ),
+                                                                }))
+                                                            )
                                                         }
                                                     />
                                                 </div>

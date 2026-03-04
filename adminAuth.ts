@@ -1,5 +1,5 @@
-export const DEMO_ADMIN_USERNAME = 'Beaesthetic';
-export const DEMO_ADMIN_PASSWORD = '12345';
+export const DEMO_ADMIN_USERNAME = 'beaestheticrd@gmail.com';
+export const DEMO_ADMIN_PASSWORD = '1999Valerie';
 export const DEMO_ADMIN_SESSION_KEY = 'be-admin-demo-session';
 
 export const hasDemoAdminSession = (): boolean => {

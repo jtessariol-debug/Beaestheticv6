@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { DEMO_ADMIN_PASSWORD, DEMO_ADMIN_USERNAME, setDemoAdminSession } from '../adminAuth';
-import { supabase } from '../supabase';
 
 const AdminLogin: React.FC = () => {
     const [user, setUser] = useState('');
@@ -10,31 +9,15 @@ const AdminLogin: React.FC = () => {
 
     const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-
-        if (user === DEMO_ADMIN_USERNAME && password === DEMO_ADMIN_PASSWORD) {
-            setDemoAdminSession();
-            window.location.hash = '#admin';
-            return;
-        }
-
-        if (!supabase) {
+        setError(null);
+        setLoading(true);
+        if (user !== DEMO_ADMIN_USERNAME || password !== DEMO_ADMIN_PASSWORD) {
+            setLoading(false);
             setError('Credenciales invalidas.');
             return;
         }
-
-        setError(null);
-        setLoading(true);
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-            email: user,
-            password,
-        });
+        setDemoAdminSession();
         setLoading(false);
-
-        if (signInError) {
-            setError(signInError.message);
-            return;
-        }
-
         window.location.hash = '#admin';
     };
 
@@ -46,9 +29,9 @@ const AdminLogin: React.FC = () => {
 
                 <form className="mt-6 space-y-4" onSubmit={onSubmit}>
                     <div>
-                        <label className="block text-xs uppercase tracking-wide text-brand-gray mb-1">Usuario o email</label>
+                        <label className="block text-xs uppercase tracking-wide text-brand-gray mb-1">Correo</label>
                         <input
-                            type="text"
+                            type="email"
                             required
                             value={user}
                             onChange={(e) => setUser(e.target.value)}
