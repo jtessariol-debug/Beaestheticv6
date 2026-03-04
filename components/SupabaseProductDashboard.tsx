@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { clearDemoAdminSession } from '../adminAuth';
-import { Product, supabase } from '../supabase';
+import {
+    MAX_ORIGINAL_IMAGE_BYTES,
+    Product,
+    fileToDataUrl,
+    getErrorMessage,
+    normalizeProductImageUrl,
+    optimizeImageForUpload,
+    supabase,
+    uploadImageToProductStorage,
+} from '../supabase';
 
 const emptyDraft = {
     name: '',
@@ -12,12 +21,28 @@ const emptyDraft = {
 
 const LOCAL_PRODUCTS_KEY = 'be-products-local:v1';
 
+const parseNumericInput = (value: string): number => {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : 0;
+};
+
+const normalizeProduct = (raw: Partial<Product> | null | undefined): Product => ({
+    id: String(raw?.id ?? crypto.randomUUID()),
+    name: String(raw?.name ?? ''),
+    price: Number(raw?.price ?? 0) || 0,
+    description: String(raw?.description ?? ''),
+    image_url: normalizeProductImageUrl(String(raw?.image_url ?? '')),
+    stock: Number(raw?.stock ?? 0) || 0,
+    created_at: String(raw?.created_at ?? new Date().toISOString()),
+});
+
 const SupabaseProductDashboard: React.FC = () => {
     const [products, setProducts] = useState<Product[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [draft, setDraft] = useState(emptyDraft);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [uploadingImage, setUploadingImage] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isLocalMode, setIsLocalMode] = useState<boolean>(!supabase);
 
@@ -27,45 +52,58 @@ const SupabaseProductDashboard: React.FC = () => {
     );
 
     const persistLocalProducts = (next: Product[]) => {
-        window.localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(next));
+        try {
+            window.localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(next));
+        } catch (persistError) {
+            setError(
+                `No se pudo guardar en modo local. Reduce el tamano de las imagenes y reintenta. (${getErrorMessage(
+                    persistError
+                )})`
+            );
+        }
     };
 
     const loadProducts = async () => {
         if (!supabase) {
-            setLoading(false);
             setIsLocalMode(true);
             try {
                 const saved = window.localStorage.getItem(LOCAL_PRODUCTS_KEY);
                 const parsed = saved ? (JSON.parse(saved) as Product[]) : [];
-                setProducts(parsed);
+                const rows = parsed.map((product) => normalizeProduct(product));
+                setProducts(rows);
+                setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
             } catch {
                 setProducts([]);
+                setSelectedId(null);
+            } finally {
+                setLoading(false);
             }
             return;
         }
+
         setLoading(true);
         setIsLocalMode(false);
         setError(null);
-        const { data, error: queryError } = await supabase
-            .from('products')
-            .select('*')
-            .order('created_at', { ascending: false });
-        setLoading(false);
-        if (queryError) {
-            setError(queryError.message);
-            return;
-        }
-        const rows = (data ?? []) as Product[];
-        setProducts(rows);
-        if (!selectedId && rows[0]) {
-            setSelectedId(rows[0].id);
-            setDraft({
-                name: rows[0].name,
-                price: rows[0].price,
-                description: rows[0].description ?? '',
-                image_url: rows[0].image_url ?? '',
-                stock: rows[0].stock ?? 0,
+        try {
+            const { data, error: queryError } = await supabase
+                .from('products')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (queryError) {
+                setError(queryError.message);
+                return;
+            }
+
+            const rows = (data ?? []).map((product) => normalizeProduct(product as Product));
+            setProducts(rows);
+            setSelectedId((prev) => {
+                if (prev && rows.some((item) => item.id === prev)) return prev;
+                return rows[0]?.id ?? null;
             });
+        } catch (queryCrash) {
+            setError(getErrorMessage(queryCrash));
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -79,7 +117,7 @@ const SupabaseProductDashboard: React.FC = () => {
             name: selectedProduct.name,
             price: selectedProduct.price,
             description: selectedProduct.description ?? '',
-            image_url: selectedProduct.image_url ?? '',
+            image_url: normalizeProductImageUrl(selectedProduct.image_url ?? ''),
             stock: selectedProduct.stock ?? 0,
         });
     }, [selectedProduct]);
@@ -103,29 +141,36 @@ const SupabaseProductDashboard: React.FC = () => {
         }
         setSaving(true);
         setError(null);
-        const { data, error: insertError } = await supabase
-            .from('products')
-            .insert({
-                name: 'Nuevo producto',
-                price: 0,
-                description: '',
-                image_url: '',
-                stock: 0,
-            })
-            .select('*')
-            .single();
-        setSaving(false);
-        if (insertError) {
-            setError(insertError.message);
-            return;
+        try {
+            const { data, error: insertError } = await supabase
+                .from('products')
+                .insert({
+                    name: 'Nuevo producto',
+                    price: 0,
+                    description: '',
+                    image_url: '',
+                    stock: 0,
+                })
+                .select('*')
+                .single();
+            if (insertError) {
+                setError(insertError.message);
+                return;
+            }
+            const newProduct = normalizeProduct(data as Product);
+            setProducts((prev) => [newProduct, ...prev]);
+            setSelectedId(newProduct.id);
+        } catch (insertCrash) {
+            setError(getErrorMessage(insertCrash));
+        } finally {
+            setSaving(false);
         }
-        const newProduct = data as Product;
-        setProducts((prev) => [newProduct, ...prev]);
-        setSelectedId(newProduct.id);
     };
 
     const saveProduct = async () => {
         if (!selectedId) return;
+        const normalizedImageUrl = normalizeProductImageUrl(draft.image_url);
+
         if (!supabase) {
             const next = products.map((item) =>
                 item.id === selectedId
@@ -134,36 +179,50 @@ const SupabaseProductDashboard: React.FC = () => {
                           name: draft.name,
                           price: draft.price,
                           description: draft.description,
-                          image_url: draft.image_url,
+                          image_url: normalizedImageUrl,
                           stock: draft.stock,
                       }
                     : item
             );
             setProducts(next);
             persistLocalProducts(next);
+            setDraft((prev) => ({ ...prev, image_url: normalizedImageUrl }));
             return;
         }
+
         setSaving(true);
         setError(null);
-        const { data, error: updateError } = await supabase
-            .from('products')
-            .update({
-                name: draft.name,
-                price: draft.price,
-                description: draft.description,
-                image_url: draft.image_url,
-                stock: draft.stock,
-            })
-            .eq('id', selectedId)
-            .select('*')
-            .single();
-        setSaving(false);
-        if (updateError) {
-            setError(updateError.message);
-            return;
+        try {
+            const { data, error: updateError } = await supabase
+                .from('products')
+                .update({
+                    name: draft.name,
+                    price: draft.price,
+                    description: draft.description,
+                    image_url: normalizedImageUrl,
+                    stock: draft.stock,
+                })
+                .eq('id', selectedId)
+                .select('*')
+                .single();
+            if (updateError) {
+                setError(updateError.message);
+                return;
+            }
+            const updated = normalizeProduct(data as Product);
+            setProducts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+            setDraft({
+                name: updated.name,
+                price: updated.price,
+                description: updated.description ?? '',
+                image_url: updated.image_url ?? '',
+                stock: updated.stock ?? 0,
+            });
+        } catch (updateCrash) {
+            setError(getErrorMessage(updateCrash));
+        } finally {
+            setSaving(false);
         }
-        const updated = data as Product;
-        setProducts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
     };
 
     const deleteProduct = async () => {
@@ -178,49 +237,87 @@ const SupabaseProductDashboard: React.FC = () => {
         }
         setSaving(true);
         setError(null);
-        const { error: deleteError } = await supabase.from('products').delete().eq('id', selectedId);
-        setSaving(false);
-        if (deleteError) {
-            setError(deleteError.message);
-            return;
+        try {
+            const { error: deleteError } = await supabase.from('products').delete().eq('id', selectedId);
+            if (deleteError) {
+                setError(deleteError.message);
+                return;
+            }
+            setProducts((prev) => prev.filter((item) => item.id !== selectedId));
+            setSelectedId(null);
+            setDraft(emptyDraft);
+        } catch (deleteCrash) {
+            setError(getErrorMessage(deleteCrash));
+        } finally {
+            setSaving(false);
         }
-        setProducts((prev) => prev.filter((item) => item.id !== selectedId));
-        setSelectedId(null);
-        setDraft(emptyDraft);
     };
 
     const uploadImage = async (file: File) => {
-        if (!selectedId) return;
-        if (!supabase) {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-                setDraft((prev) => ({ ...prev, image_url: dataUrl }));
-            };
-            reader.readAsDataURL(file);
+        if (!selectedId) {
+            setError('Primero selecciona o crea un producto.');
             return;
         }
-        setSaving(true);
+
         setError(null);
-        const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
-        const path = `public/${Date.now()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage.from('products').upload(path, file, {
-            upsert: false,
-        });
-        if (uploadError) {
+        setSaving(true);
+        setUploadingImage(true);
+
+        try {
+            if (!supabase) {
+                const optimized = await optimizeImageForUpload(file);
+                const dataUrl = await fileToDataUrl(optimized);
+                const nextUrl = normalizeProductImageUrl(dataUrl);
+
+                setDraft((prev) => ({ ...prev, image_url: nextUrl }));
+                const next = products.map((item) => (item.id === selectedId ? { ...item, image_url: nextUrl } : item));
+                setProducts(next);
+                persistLocalProducts(next);
+                return;
+            }
+
+            const { publicUrl } = await uploadImageToProductStorage(file);
+            const nextUrl = normalizeProductImageUrl(publicUrl);
+
+            setDraft((prev) => ({ ...prev, image_url: nextUrl }));
+
+            const { data, error: updateError } = await supabase
+                .from('products')
+                .update({ image_url: nextUrl })
+                .eq('id', selectedId)
+                .select('*')
+                .single();
+
+            if (updateError) {
+                setError(`Imagen subida, pero no se pudo guardar la URL: ${updateError.message}`);
+                return;
+            }
+
+            const updated = normalizeProduct(data as Product);
+            setProducts((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+            setDraft({
+                name: updated.name,
+                price: updated.price,
+                description: updated.description ?? '',
+                image_url: updated.image_url ?? '',
+                stock: updated.stock ?? 0,
+            });
+        } catch (uploadCrash) {
+            setError(getErrorMessage(uploadCrash));
+        } finally {
             setSaving(false);
-            setError(uploadError.message);
-            return;
+            setUploadingImage(false);
         }
-        const { data } = supabase.storage.from('products').getPublicUrl(path);
-        setDraft((prev) => ({ ...prev, image_url: data.publicUrl }));
-        setSaving(false);
     };
 
     const signOut = async () => {
         clearDemoAdminSession();
         if (supabase) {
-            await supabase.auth.signOut();
+            try {
+                await supabase.auth.signOut();
+            } catch {
+                // noop: forzar salida visual aunque el signOut remoto falle.
+            }
         }
         window.location.hash = '#login';
     };
@@ -310,7 +407,7 @@ const SupabaseProductDashboard: React.FC = () => {
                                             type="number"
                                             className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.price}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, price: Number(e.target.value) }))}
+                                            onChange={(e) => setDraft((prev) => ({ ...prev, price: parseNumericInput(e.target.value) }))}
                                         />
                                     </div>
                                     <div>
@@ -319,27 +416,35 @@ const SupabaseProductDashboard: React.FC = () => {
                                             type="number"
                                             className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
                                             value={draft.stock}
-                                            onChange={(e) => setDraft((prev) => ({ ...prev, stock: Number(e.target.value) }))}
+                                            onChange={(e) => setDraft((prev) => ({ ...prev, stock: parseNumericInput(e.target.value) }))}
                                         />
                                     </div>
                                     <div>
                                         <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Subir imagen</label>
                                         <input
                                             type="file"
-                                            accept="image/*"
-                                            className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm"
+                                            accept="image/jpeg,image/jpg,image/png,image/webp,image/avif"
+                                            className="w-full rounded-md border border-brand-brown/20 px-3 py-2 text-sm disabled:opacity-60"
+                                            disabled={saving || uploadingImage}
                                             onChange={(event) => {
-                                                const file = event.target.files?.[0];
+                                                const input = event.currentTarget;
+                                                const file = input.files?.[0];
+                                                input.value = '';
                                                 if (file) void uploadImage(file);
                                             }}
                                         />
+                                        <p className="mt-1 text-xs text-brand-gray">
+                                            JPG, PNG, WEBP o AVIF. Maximo {Math.round(MAX_ORIGINAL_IMAGE_BYTES / (1024 * 1024))}MB
+                                            (se optimiza automaticamente).
+                                        </p>
                                     </div>
                                     {draft.image_url && (
                                         <div className="md:col-span-2">
                                             <img
-                                                src={draft.image_url}
+                                                src={normalizeProductImageUrl(draft.image_url)}
                                                 alt={draft.name}
                                                 className="h-56 w-full rounded-lg border border-brand-brown/10 object-cover"
+                                                onError={() => setError('La URL de la imagen no es valida o no es publica.')}
                                             />
                                         </div>
                                     )}
@@ -357,15 +462,15 @@ const SupabaseProductDashboard: React.FC = () => {
                                     <button
                                         type="button"
                                         onClick={saveProduct}
-                                        disabled={saving}
+                                        disabled={saving || uploadingImage}
                                         className="rounded-md bg-brand-brown text-brand-white px-4 py-2 text-sm font-medium disabled:opacity-60"
                                     >
-                                        {saving ? 'Guardando...' : 'Guardar cambios'}
+                                        {uploadingImage ? 'Subiendo imagen...' : saving ? 'Guardando...' : 'Guardar cambios'}
                                     </button>
                                     <button
                                         type="button"
                                         onClick={deleteProduct}
-                                        disabled={saving}
+                                        disabled={saving || uploadingImage}
                                         className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 disabled:opacity-60"
                                     >
                                         Eliminar producto

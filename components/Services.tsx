@@ -10,24 +10,28 @@ const ServiceCard: React.FC<{ service: Service; onClick: () => void; onOpenDetai
     }, [service.imageUrl]);
 
     return (
-        <div className="relative overflow-hidden group animate-fade-in cursor-pointer" onClick={onClick}>
+        <div className="relative w-full min-w-0 overflow-hidden group animate-fade-in cursor-pointer" onClick={onClick}>
             {showImage ? (
                 <img
                     src={service.imageUrl}
                     alt={service.name}
-                    className="w-full h-80 object-cover transition-transform duration-500 ease-custom-ease group-hover:scale-110"
+                    loading="lazy"
+                    decoding="async"
+                    fetchPriority="low"
+                    sizes="(max-width: 767px) 100vw, (max-width: 1023px) 50vw, 33vw"
+                    className="w-full h-72 sm:h-80 object-cover transition-transform duration-500 ease-custom-ease group-hover:scale-110"
                     onError={() => setShowImage(false)}
                 />
             ) : (
-                <div className="w-full h-80 bg-brand-beige border border-brand-brown/20 flex items-center justify-center">
+                <div className="w-full h-72 sm:h-80 bg-brand-beige border border-brand-brown/20 flex items-center justify-center">
                     <span className="text-brand-brown text-sm tracking-wide">Imagen proximamente</span>
                 </div>
             )}
-            <div className="absolute inset-0 bg-black/40 transition-opacity duration-300 opacity-0 group-hover:opacity-100"></div>
+            <div className="absolute inset-0 bg-black/40 transition-opacity duration-300 opacity-40 md:opacity-0 md:group-hover:opacity-100"></div>
             <div className="absolute bottom-0 left-0 p-6">
-                <h3 className="text-brand-white text-xl font-serif transform translate-y-4 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all duration-500 ease-custom-ease">{service.name}</h3>
+                <h3 className="text-brand-white text-xl font-serif transform translate-y-0 opacity-100 md:translate-y-4 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 transition-all duration-500 ease-custom-ease">{service.name}</h3>
             </div>
-            <div className="absolute bottom-4 right-4">
+            <div className="absolute bottom-4 right-4 z-10">
                 <button
                     type="button"
                     onClick={(e) => {
@@ -87,7 +91,7 @@ const Services: React.FC<{ services: Service[] }> = ({ services }) => {
     return (
         <>
             <section id="servicios" className="py-20 lg:py-32 bg-brand-beige-dark">
-                <div className="container mx-auto px-6">
+                <div className="container mx-auto px-4 sm:px-6">
                     <div className="text-center mb-12 fade-up-on-scroll opacity-0">
                         <h2 className="font-serif text-4xl lg:text-5xl text-brand-brown mb-4">Servicios Exclusivos</h2>
                         <p className="font-sans text-brand-gray max-w-2xl mx-auto">Un portafolio de tratamientos curados para satisfacer las mas altas exigencias, desde el rejuvenecimiento facial hasta el bienestar integral.</p>
@@ -109,7 +113,7 @@ const Services: React.FC<{ services: Service[] }> = ({ services }) => {
                         ))}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 fade-up-on-scroll opacity-0" style={{ animationDelay: '0.4s' }}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 fade-up-on-scroll opacity-0" style={{ animationDelay: '0.4s' }}>
                         {filteredServices.map((service) => (
                             <ServiceCard
                                 key={service.id}
