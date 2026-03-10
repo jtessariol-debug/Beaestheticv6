@@ -35,35 +35,32 @@ const getViewFromHash = (): AppView => {
 };
 
 const App: React.FC = () => {
+    // Iniciamos con lo que haya en local, pero marcamos que estamos cargando la "verdad" desde la nube
     const [siteContent, setSiteContent] = useState(loadSiteContent());
+    const [isInitialLoading, setIsInitialLoading] = useState(true); 
     const [serviceIdFromHash, setServiceIdFromHash] = useState<number | null>(null);
     const [view, setView] = useState<AppView>(getViewFromHash());
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState<boolean>(true);
     const [demoSession, setDemoSession] = useState<boolean>(hasDemoAdminSession());
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-    const isMountedRef = useRef(true);
-
-    // Cleanup
-    useEffect(() => {
-        return () => {
-            isMountedRef.current = false;
-        };
-    }, []);
 
     // Función para obtener y aplicar contenido remoto
     const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
-        const { data, error } = await getSiteContent('home');
+        try {
+            const { data, error } = await getSiteContent('home');
 
-        if (error || !data?.content) {
-            console.error(`[Supabase] Error cargando desde ${source}:`, error);
-            return;
+            if (data?.content) {
+                const remoteContent = ensureContentShape(data.content);
+                setSiteContent(remoteContent);
+                saveLocalSiteContent(remoteContent);
+                console.log(`[Supabase] Contenido sincronizado (${source})`);
+            }
+        } catch (err) {
+            console.error("Error en fetch inicial:", err);
+        } finally {
+            setIsInitialLoading(false); // Ya podemos permitir el autoguardado
         }
-
-        const remoteContent = ensureContentShape(data.content);
-        setSiteContent(remoteContent);
-        saveLocalSiteContent(remoteContent);
-        console.log(`[Supabase] Contenido sincronizado con éxito (${source})`);
     }, []);
 
     // Carga inicial
@@ -71,7 +68,7 @@ const App: React.FC = () => {
         fetchAndApplyRemoteContent("bootstrap");
     }, [fetchAndApplyRemoteContent]);
 
-    // Listener Realtime - Mantiene la web actualizada al instante
+    // Listener Realtime
     useEffect(() => {
         if (!supabase) return;
 
@@ -100,22 +97,27 @@ const App: React.FC = () => {
         };
     }, []);
 
-    // PERSISTENCIA: Guarda en Supabase cuando se edita en el Admin Dashboard
+    // PERSISTENCIA: Autoguardado inteligente
     useEffect(() => {
-        if (view !== 'admin-content' || !session) return;
+        // Bloqueo: No guardar si no es el panel admin, si no hay sesión, 
+        // o si todavía estamos descargando la versión inicial de la nube.
+        if (view !== 'admin-content' || !session || isInitialLoading) return;
+
+        setSaveStatus('saving');
 
         const timer = setTimeout(async () => {
-            setSaveStatus('saving');
             const { error } = await saveRemoteSiteContent('home', siteContent);
             if (error) {
                 setSaveStatus('error');
+                console.error("Error guardando:", error);
             } else {
                 setSaveStatus('saved');
+                saveLocalSiteContent(siteContent); // Actualizamos local solo tras éxito en nube
             }
-        }, 1500); // Debounce de 1.5s para no saturar la DB mientras escriben
+        }, 800); // 800ms de debounce
 
         return () => clearTimeout(timer);
-    }, [siteContent, view, session]);
+    }, [siteContent, view, session, isInitialLoading]);
 
     // Manejo de sesión
     useEffect(() => {
