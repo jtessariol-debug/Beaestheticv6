@@ -87,7 +87,7 @@ useEffect(() => {
         event: "*",
         schema: "public",
         table: "site_content",
-        filter: "id=eq.home"
+        filter: "id=eq.home",
       },
       () => {
         console.log("Realtime update received");
@@ -95,15 +95,11 @@ useEffect(() => {
       }
     )
     .subscribe();
-    return () => {
-  supabase.removeChannel(channel);
-};
-
-}, [fetchAndApplyRemoteContent]);
 
   return () => {
     supabase.removeChannel(channel);
   };
+
 }, [fetchAndApplyRemoteContent]);
 
         if (!isMountedRef.current) {
