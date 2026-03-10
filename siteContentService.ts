@@ -1,6 +1,9 @@
 import { supabase } from './supabase';
 
-export async function getSiteContent(id: string) {
+// Forzamos el ID que vimos en tu base de datos
+const SITE_ID = 'home';
+
+export async function getSiteContent() {
     if (!supabase) {
         return {
             data: null,
@@ -11,11 +14,11 @@ export async function getSiteContent(id: string) {
     return supabase
         .from('site_content')
         .select('*')
-        .eq('id', id)
+        .eq('id', SITE_ID) // <--- Siempre busca 'home'
         .single();
 }
 
-export async function saveSiteContent(id: string, content: any) {
+export async function saveSiteContent(content: any) {
     if (!supabase) {
         return {
             data: null,
@@ -23,12 +26,15 @@ export async function saveSiteContent(id: string, content: any) {
         };
     }
 
+    // Usamos upsert asegurando que el ID sea 'home'
+    // Esto sobreescribirá la fila existente en lugar de crear una nueva
     return supabase
         .from('site_content')
         .upsert({
-            id: id,
+            id: SITE_ID, 
             content: content,
             updated_at: new Date().toISOString(),
+        }, {
+            onConflict: 'id' // Esto le dice a Supabase: "Si el ID 'home' ya existe, actualízalo"
         });
 }
-
