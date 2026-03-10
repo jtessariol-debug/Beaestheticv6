@@ -115,7 +115,7 @@ useEffect(() => {
   };
 }, []);
 
-}, [fetchAndApplyRemoteContent]);
+}, [fetchAndApplyRemoteContent];
         if (!isMountedRef.current) {
             return { data, error };
         }
