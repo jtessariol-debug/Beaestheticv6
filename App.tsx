@@ -51,6 +51,9 @@ const App: React.FC = () => {
             isMountedRef.current = false;
         };
     }, []);
+    useEffect(() => {
+    fetchAndApplyRemoteContent("bootstrap");
+}, []);
 
     const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
         const { data, error } = await getSiteContent('home');
