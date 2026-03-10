@@ -95,6 +95,11 @@ useEffect(() => {
       }
     )
     .subscribe();
+    return () => {
+  supabase.removeChannel(channel);
+};
+
+}, [fetchAndApplyRemoteContent]);
 
   return () => {
     supabase.removeChannel(channel);
