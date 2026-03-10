@@ -41,12 +41,10 @@ const App: React.FC = () => {
     const [session, setSession] = useState<Session | null>(null);
     const [authLoading, setAuthLoading] = useState<boolean>(true);
     const [demoSession, setDemoSession] = useState<boolean>(hasDemoAdminSession());
-    const [remoteContentReady, setRemoteContentReady] = useState<boolean>(!supabase);
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-    const lastRemoteSnapshotRef = useRef<string>(JSON.stringify(siteContent));
     const isMountedRef = useRef(true);
 
-    // Cleanup para evitar memory leaks
+    // Cleanup
     useEffect(() => {
         return () => {
             isMountedRef.current = false;
@@ -57,25 +55,23 @@ const App: React.FC = () => {
     const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
         const { data, error } = await getSiteContent('home');
 
-        console.log("[supabase][site_content] getSiteContent('home')", {
-            source,
-            data,
-            error,
-        });
-
-        if (!data?.content) return;
+        if (error || !data?.content) {
+            console.error(`[Supabase] Error cargando desde ${source}:`, error);
+            return;
+        }
 
         const remoteContent = ensureContentShape(data.content);
         setSiteContent(remoteContent);
         saveLocalSiteContent(remoteContent);
+        console.log(`[Supabase] Contenido sincronizado con éxito (${source})`);
     }, []);
 
-    // Carga inicial (bootstrap)
+    // Carga inicial
     useEffect(() => {
         fetchAndApplyRemoteContent("bootstrap");
     }, [fetchAndApplyRemoteContent]);
 
-    // Listener realtime
+    // Listener Realtime - Mantiene la web actualizada al instante
     useEffect(() => {
         if (!supabase) return;
 
@@ -90,37 +86,38 @@ const App: React.FC = () => {
                     filter: "id=eq.home",
                 },
                 (payload) => {
-                    console.log("Realtime update received:", payload);
-                    if (payload.new) {
+                    if (payload.new && payload.new.content) {
                         const remoteContent = ensureContentShape(payload.new.content);
                         setSiteContent(remoteContent);
                         saveLocalSiteContent(remoteContent);
-                        console.log("Contenido actualizado desde realtime");
-                    } else {
-                        console.error("No payload.new en el update");
                     }
                 }
             )
-            .subscribe((status) => {
-                console.log("Channel status:", status);
-                if (status === "SUBSCRIBED") {
-                    console.log("Realtime conectado exitosamente");
-                } else if (status === "CHANNEL_ERROR") {
-                    console.error("Error en channel realtime");
-                }
-            });
+            .subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [fetchAndApplyRemoteContent]);
+    }, []);
 
-    // Guardar en local cada vez que cambia siteContent
+    // PERSISTENCIA: Guarda en Supabase cuando se edita en el Admin Dashboard
     useEffect(() => {
-        saveLocalSiteContent(siteContent);
-    }, [siteContent]);
+        if (view !== 'admin-content' || !session) return;
 
-    // Manejo de sesión de Supabase
+        const timer = setTimeout(async () => {
+            setSaveStatus('saving');
+            const { error } = await saveRemoteSiteContent('home', siteContent);
+            if (error) {
+                setSaveStatus('error');
+            } else {
+                setSaveStatus('saved');
+            }
+        }, 1500); // Debounce de 1.5s para no saturar la DB mientras escriben
+
+        return () => clearTimeout(timer);
+    }, [siteContent, view, session]);
+
+    // Manejo de sesión
     useEffect(() => {
         if (!supabase) {
             setAuthLoading(false);
@@ -139,7 +136,7 @@ const App: React.FC = () => {
         return () => subscription.unsubscribe();
     }, []);
 
-    // Manejo de hash para navegación
+    // Navegación por Hash
     useEffect(() => {
         const syncFromHash = () => {
             setView(getViewFromHash());
@@ -153,31 +150,28 @@ const App: React.FC = () => {
         return () => window.removeEventListener('hashchange', syncFromHash);
     }, []);
 
-    // Redirección de autenticación
+    // Guardas de acceso
     useEffect(() => {
         const hasAccess = Boolean(session || demoSession);
-
         if ((view === 'admin' || view === 'admin-content') && !authLoading && !hasAccess) {
             window.location.hash = '#login';
             return;
         }
-
         if (view === 'login' && hasAccess) {
             window.location.hash = '#admin';
         }
     }, [view, authLoading, session, demoSession]);
 
     const selectedService = useMemo(
-        () => (serviceIdFromHash == null ? null : siteContent.services.find((service) => service.id === serviceIdFromHash) || null),
+        () => (serviceIdFromHash == null ? null : siteContent.services.find((s) => s.id === serviceIdFromHash) || null),
         [serviceIdFromHash, siteContent.services]
     );
 
     const handleForceRefreshFromSupabase = useCallback(() => {
-        console.log("[supabase][site_content] manual force refresh requested");
         void fetchAndApplyRemoteContent('manual-force-refresh');
     }, [fetchAndApplyRemoteContent]);
 
-    // Animaciones al scroll
+    // Animaciones
     useEffect(() => {
         if (selectedService || view !== 'site') return;
         const observer = new IntersectionObserver(
@@ -194,25 +188,12 @@ const App: React.FC = () => {
 
         const elements = document.querySelectorAll('.fade-up-on-scroll');
         elements.forEach((el) => observer.observe(el));
-
         return () => elements.forEach((el) => observer.unobserve(el));
     }, [selectedService, view]);
 
-    // Auto-refresh cada 10 segundos (temporal para debug, puedes quitarlo después)
-    useEffect(() => {
-        const interval = setInterval(() => {
-            window.location.reload();
-        }, 10000);
+    if (view === 'login') return <AdminLogin />;
 
-        return () => clearInterval(interval);
-    }, []);
-
-    // Renderizado condicional
-    if (view === 'login') {
-        return <AdminLogin />;
-    }
-
-    if (view === 'admin') {
+    if (view === 'admin' || view === 'admin-content') {
         if (authLoading && !demoSession) {
             return (
                 <main className="min-h-screen bg-brand-beige-dark p-6 flex items-center justify-center">
@@ -220,26 +201,9 @@ const App: React.FC = () => {
                 </main>
             );
         }
-
-        if (!session && !demoSession) {
-            return null;
-        }
-
-        return <SupabaseProductDashboard />;
-    }
-
-    if (view === 'admin-content') {
-        if (authLoading && !demoSession) {
-            return (
-                <main className="min-h-screen bg-brand-beige-dark p-6 flex items-center justify-center">
-                    <p className="text-brand-brown">Verificando sesión...</p>
-                </main>
-            );
-        }
-
-        if (!session && !demoSession) {
-            return null;
-        }
+        if (!session && !demoSession) return null;
+        
+        if (view === 'admin') return <SupabaseProductDashboard />;
 
         return (
             <>
@@ -249,7 +213,7 @@ const App: React.FC = () => {
                         onClick={handleForceRefreshFromSupabase}
                         className="rounded-md border border-brand-brown/30 bg-white px-3 py-2 text-xs font-medium text-brand-brown shadow-sm hover:bg-brand-beige"
                     >
-                        Force refresh from Supabase
+                        Refrescar desde la Nube
                     </button>
                 </div>
                 <AdminDashboard
@@ -262,9 +226,7 @@ const App: React.FC = () => {
         );
     }
 
-    if (selectedService) {
-        return <ServiceDetailPage service={selectedService} />;
-    }
+    if (selectedService) return <ServiceDetailPage service={selectedService} />;
 
     return (
         <div className="bg-brand-beige">
