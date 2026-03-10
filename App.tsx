@@ -91,51 +91,6 @@ const App: React.FC = () => {
     }, [siteContent]);
 
     useEffect(() => {
-        console.log("REALTIME EFFECT RUNNING");
-        if (!supabase) {
-            return;
-        }
-
-        const channel = supabase
-            .channel('site_content_realtime')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'site_content',
-                    filter: 'id=eq.home',
-                },
-                async (payload) => {
-                    console.log('REALTIME PAYLOAD:', payload);
-
-                    const nextRaw = (payload.new as { content?: unknown } | null)?.content;
-                    if (!nextRaw) {
-                        return;
-                    }
-
-                    const normalized = ensureContentShape(nextRaw as Partial<typeof siteContent>);
-                    const snapshot = JSON.stringify(normalized);
-
-                    if (snapshot === lastRemoteSnapshotRef.current) {
-                        console.log("Skipping identical snapshot");
-                        return;
-                    }
-
-                    console.log("Applying realtime update");
-                    await fetchAndApplyRemoteContent("realtime");
-                }
-            )
-            .subscribe((status) => {
-                console.log("REALTIME STATUS:", status);
-            });
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [fetchAndApplyRemoteContent]);
-
-    useEffect(() => {
         if (!supabase) {
             setAuthLoading(false);
             return;
