@@ -84,21 +84,36 @@ useEffect(() => {
     .on(
       "postgres_changes",
       {
-        event: "*",
+        event: "UPDATE",  // Solo UPDATE para cambios
         schema: "public",
         table: "site_content",
-        filter: "id=eq.home",
+        filter: "id=eq.home",  // Verifica si "home" es exacto (case-sensitive)
       },
-      () => {
-        console.log("Realtime update received");
-        fetchAndApplyRemoteContent("realtime");
+      (payload) => {
+        console.log("Realtime update received:", payload);  // Log detallado para debug
+        if (payload.new) {
+          const remoteContent = ensureContentShape(payload.new.content);
+          setSiteContent(remoteContent);  // Actualiza estado directamente con payload.new
+          saveLocalSiteContent(remoteContent);
+          console.log("Contenido actualizado desde realtime");
+        } else {
+          console.error("No payload.new en el update");
+        }
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      console.log("Channel status:", status);  // Log para ver si suscribe OK (subscribed, error, etc.)
+      if (status === "SUBSCRIBED") {
+        console.log("Realtime conectado exitosamente");
+      } else if (status === "CHANNEL_ERROR") {
+        console.error("Error en channel realtime");
+      }
+    });
 
   return () => {
     supabase.removeChannel(channel);
   };
+}, []);
 
 }, [fetchAndApplyRemoteContent]);
         if (!isMountedRef.current) {
