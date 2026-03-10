@@ -46,98 +46,81 @@ const App: React.FC = () => {
     const lastRemoteSnapshotRef = useRef<string>(JSON.stringify(siteContent));
     const isMountedRef = useRef(true);
 
+    // Cleanup para evitar memory leaks
     useEffect(() => {
         return () => {
             isMountedRef.current = false;
         };
     }, []);
-    useEffect(() => {
-    fetchAndApplyRemoteContent("bootstrap");
-}, []);
-    
 
-const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
-  const { data, error } = await getSiteContent('home');
+    // Función para obtener y aplicar contenido remoto
+    const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
+        const { data, error } = await getSiteContent('home');
 
-  console.log("[supabase][site_content] getSiteContent('home')", {
-    source,
-    data,
-    error,
-  });
+        console.log("[supabase][site_content] getSiteContent('home')", {
+            source,
+            data,
+            error,
+        });
 
-  if (!data?.content) return;
+        if (!data?.content) return;
 
-  const remoteContent = ensureContentShape(data.content);
-  setSiteContent(remoteContent);
-  saveLocalSiteContent(remoteContent);
-
-}, []);
-    useEffect(() => {
-  fetchAndApplyRemoteContent("bootstrap");
-}, [fetchAndApplyRemoteContent]);
-
-useEffect(() => {
-  if (!supabase) return;
-
-  const channel = supabase
-    .channel("site_content_realtime")
-    .on(
-      "postgres_changes",
-      {
-        event: "UPDATE",  // Solo UPDATE para cambios
-        schema: "public",
-        table: "site_content",
-        filter: "id=eq.home",  // Verifica si "home" es exacto (case-sensitive)
-      },
-      (payload) => {
-        console.log("Realtime update received:", payload);  // Log detallado para debug
-        if (payload.new) {
-          const remoteContent = ensureContentShape(payload.new.content);
-          setSiteContent(remoteContent);  // Actualiza estado directamente con payload.new
-          saveLocalSiteContent(remoteContent);
-          console.log("Contenido actualizado desde realtime");
-        } else {
-          console.error("No payload.new en el update");
-        }
-      }
-    )
-    .subscribe((status) => {
-      console.log("Channel status:", status);  // Log para ver si suscribe OK (subscribed, error, etc.)
-      if (status === "SUBSCRIBED") {
-        console.log("Realtime conectado exitosamente");
-      } else if (status === "CHANNEL_ERROR") {
-        console.error("Error en channel realtime");
-      }
-    });
-
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
-
-}, [fetchAndApplyRemoteContent];
-        if (!isMountedRef.current) {
-            return { data, error };
-        }
-
-      if (error || !data?.content) {
-    console.warn("Supabase no respondió. Usando contenido local.");
-    return;
-}
-
-        const remoteContent = ensureContentShape(data.content as Partial<typeof siteContent>);
-        const snapshot = JSON.stringify(remoteContent);
-        lastRemoteSnapshotRef.current = snapshot;
+        const remoteContent = ensureContentShape(data.content);
         setSiteContent(remoteContent);
         saveLocalSiteContent(remoteContent);
-
-        return { data, error };
     }, []);
 
+    // Carga inicial (bootstrap)
+    useEffect(() => {
+        fetchAndApplyRemoteContent("bootstrap");
+    }, [fetchAndApplyRemoteContent]);
+
+    // Listener realtime
+    useEffect(() => {
+        if (!supabase) return;
+
+        const channel = supabase
+            .channel("site_content_realtime")
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "site_content",
+                    filter: "id=eq.home",
+                },
+                (payload) => {
+                    console.log("Realtime update received:", payload);
+                    if (payload.new) {
+                        const remoteContent = ensureContentShape(payload.new.content);
+                        setSiteContent(remoteContent);
+                        saveLocalSiteContent(remoteContent);
+                        console.log("Contenido actualizado desde realtime");
+                    } else {
+                        console.error("No payload.new en el update");
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log("Channel status:", status);
+                if (status === "SUBSCRIBED") {
+                    console.log("Realtime conectado exitosamente");
+                } else if (status === "CHANNEL_ERROR") {
+                    console.error("Error en channel realtime");
+                }
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [fetchAndApplyRemoteContent]);
+
+    // Guardar en local cada vez que cambia siteContent
     useEffect(() => {
         saveLocalSiteContent(siteContent);
     }, [siteContent]);
 
+    // Manejo de sesión de Supabase
     useEffect(() => {
         if (!supabase) {
             setAuthLoading(false);
@@ -149,15 +132,14 @@ useEffect(() => {
             setAuthLoading(false);
         });
 
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
             setSession(currentSession);
         });
 
         return () => subscription.unsubscribe();
     }, []);
 
+    // Manejo de hash para navegación
     useEffect(() => {
         const syncFromHash = () => {
             setView(getViewFromHash());
@@ -171,6 +153,7 @@ useEffect(() => {
         return () => window.removeEventListener('hashchange', syncFromHash);
     }, []);
 
+    // Redirección de autenticación
     useEffect(() => {
         const hasAccess = Boolean(session || demoSession);
 
@@ -194,6 +177,7 @@ useEffect(() => {
         void fetchAndApplyRemoteContent('manual-force-refresh');
     }, [fetchAndApplyRemoteContent]);
 
+    // Animaciones al scroll
     useEffect(() => {
         if (selectedService || view !== 'site') return;
         const observer = new IntersectionObserver(
@@ -213,13 +197,17 @@ useEffect(() => {
 
         return () => elements.forEach((el) => observer.unobserve(el));
     }, [selectedService, view]);
-useEffect(() => {
-    const interval = setInterval(() => {
-        window.location.reload();
-    }, 10000); // refresca cada 10 segundos
 
-    return () => clearInterval(interval);
-}, []);
+    // Auto-refresh cada 10 segundos (temporal para debug, puedes quitarlo después)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            window.location.reload();
+        }, 10000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    // Renderizado condicional
     if (view === 'login') {
         return <AdminLogin />;
     }
@@ -228,7 +216,7 @@ useEffect(() => {
         if (authLoading && !demoSession) {
             return (
                 <main className="min-h-screen bg-brand-beige-dark p-6 flex items-center justify-center">
-                    <p className="text-brand-brown">Verificando sesion...</p>
+                    <p className="text-brand-brown">Verificando sesión...</p>
                 </main>
             );
         }
@@ -244,7 +232,7 @@ useEffect(() => {
         if (authLoading && !demoSession) {
             return (
                 <main className="min-h-screen bg-brand-beige-dark p-6 flex items-center justify-center">
-                    <p className="text-brand-brown">Verificando sesion...</p>
+                    <p className="text-brand-brown">Verificando sesión...</p>
                 </main>
             );
         }
