@@ -67,15 +67,10 @@ const App: React.FC = () => {
             return { data, error };
         }
 
-        if (error || !data?.content) {
-            if (error) {
-                console.error("[supabase][site_content] getSiteContent('home') error", {
-                    source,
-                    error,
-                });
-            }
-            return { data, error };
-        }
+      if (error || !data?.content) {
+    console.warn("Supabase no respondió. Usando contenido local.");
+    return;
+}
 
         const remoteContent = ensureContentShape(data.content as Partial<typeof siteContent>);
         const snapshot = JSON.stringify(remoteContent);
