@@ -9,7 +9,7 @@ import {
 } from '../content';
 import { supabase } from '../supabase';
 import { ServiceCategory } from '../types';
-import { saveRemoteSiteContent } from '../siteContentService'; // ← Asegúrate de importar esto
+import { saveRemoteSiteContent } from '../siteContentService'; // Asegúrate de que esto esté importado
 
 type AdminDashboardProps = {
     content: SiteContent;
@@ -166,25 +166,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
         onUploaded(data.publicUrl);
     };
 
-    // Función para guardar todo el contenido
-    const handleSave = async () => {
-        console.log("Botón Guardar clicado - contenido a guardar:", content);
-        try {
-            // Llama a la función que ya tienes en siteContentService.ts
-            const { error } = await saveRemoteSiteContent('home', content);
-            if (error) {
-                console.error("Error al guardar en Supabase:", error);
-                alert("Hubo un error al guardar los cambios. Intenta de nuevo.");
-                return;
-            }
-            console.log("Guardado exitoso en Supabase");
-            alert("¡Cambios guardados correctamente! Se reflejarán en el sitio.");
-        } catch (err) {
-            console.error("Error inesperado al guardar:", err);
-            alert("Error inesperado. Revisa la consola o contacta soporte.");
-        }
-    };
-
     return (
         <main className="min-h-screen bg-brand-beige-dark py-8">
             <div className="container mx-auto px-4 sm:px-6">
@@ -221,26 +202,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                         </div>
                     </div>
                 </div>
-
                 {imageUploadError && (
                     <p className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{imageUploadError}</p>
                 )}
-
-                {/* BOTÓN DE GUARDAR GLOBAL - FIJO EN LA PARTE SUPERIOR DERECHA */}
-                <div className="mb-6 flex justify-end">
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saveStatus === 'saving'}
-                        className={`px-8 py-4 rounded-lg text-white font-bold transition-all shadow-md ${
-                            saveStatus === 'saving'
-                                ? 'bg-gray-500 cursor-not-allowed'
-                                : 'bg-green-600 hover:bg-green-700 active:bg-green-800'
-                        }`}
-                    >
-                        {saveStatus === 'saving' ? 'Guardando...' : 'Guardar Todos los Cambios'}
-                    </button>
-                </div>
 
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_1fr]">
                     <aside className="rounded-xl border border-brand-brown/10 bg-white p-3">
@@ -265,285 +229,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ content, onChange, onRe
                     <section className="rounded-xl border border-brand-brown/10 bg-white p-4 sm:p-6">
                         {activeTab === 'general' && (
                             <div className="space-y-8">
-                                <div>
-                                    <h2 className="font-serif text-2xl text-brand-brown">Hero</h2>
-                                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Titulo principal</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.hero.titlePrimary}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        hero: { ...prev.hero, titlePrimary: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Linea acento</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.hero.titleAccent}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        hero: { ...prev.hero, titleAccent: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div className="md:col-span-2">
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Subtitulo</label>
-                                            <textarea
-                                                className={textareaClass}
-                                                value={content.hero.subtitle}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        hero: { ...prev.hero, subtitle: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Boton hero</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.hero.ctaLabel}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        hero: { ...prev.hero, ctaLabel: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Video hero URL</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.hero.videoUrl}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        hero: { ...prev.hero, videoUrl: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        {content.hero.slides.map((slide, index) => (
-                                            <div key={`hero-slide-${index}`} className="md:col-span-2">
-                                                <ImageUploadInput
-                                                    label={`Imagen hero ${index + 1}`}
-                                                    value={slide}
-                                                    uploading={uploadingFieldKey === `hero-slide-${index}`}
-                                                    onChange={(nextValue) =>
-                                                        updateContent((prev) => ({
-                                                            ...prev,
-                                                            hero: {
-                                                                ...prev.hero,
-                                                                slides: prev.hero.slides.map((item, currentIndex) =>
-                                                                    currentIndex === index ? nextValue : item
-                                                                ),
-                                                            },
-                                                        }))
-                                                    }
-                                                    onFileDrop={(file) =>
-                                                        void uploadImageForField(`hero-slide-${index}`, file, (url) =>
-                                                            updateContent((prev) => ({
-                                                                ...prev,
-                                                                hero: {
-                                                                    ...prev.hero,
-                                                                    slides: prev.hero.slides.map((item, currentIndex) =>
-                                                                        currentIndex === index ? url : item
-                                                                    ),
-                                                                },
-                                                            }))
-                                                        )
-                                                    }
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h2 className="font-serif text-2xl text-brand-brown">Quienes Somos</h2>
-                                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Titulo</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.philosophy.title}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        philosophy: { ...prev.philosophy, title: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <ImageUploadInput
-                                                label="Imagen URL"
-                                                value={content.philosophy.imageUrl}
-                                                uploading={uploadingFieldKey === 'philosophy-image'}
-                                                onChange={(nextValue) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        philosophy: { ...prev.philosophy, imageUrl: nextValue },
-                                                    }))
-                                                }
-                                                onFileDrop={(file) =>
-                                                    void uploadImageForField('philosophy-image', file, (url) =>
-                                                        updateContent((prev) => ({
-                                                            ...prev,
-                                                            philosophy: { ...prev.philosophy, imageUrl: url },
-                                                        }))
-                                                    )
-                                                }
-                                            />
-                                        </div>
-                                        {content.philosophy.paragraphs.map((paragraph, index) => (
-                                            <div key={`paragraph-${index}`} className="md:col-span-2">
-                                                <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Parrafo {index + 1}</label>
-                                                <textarea
-                                                    className={textareaClass}
-                                                    value={paragraph}
-                                                    onChange={(e) =>
-                                                        updateContent((prev) => ({
-                                                            ...prev,
-                                                            philosophy: {
-                                                                ...prev.philosophy,
-                                                                paragraphs: prev.philosophy.paragraphs.map((item, currentIndex) =>
-                                                                    currentIndex === index ? e.target.value : item
-                                                                ),
-                                                            },
-                                                        }))
-                                                    }
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h2 className="font-serif text-2xl text-brand-brown">CTA y contacto</h2>
-                                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">CTA titulo</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.cta.title}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        cta: { ...prev.cta, title: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">CTA boton</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.cta.buttonLabel}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        cta: { ...prev.cta, buttonLabel: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div className="md:col-span-2">
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">CTA descripcion</label>
-                                            <textarea
-                                                className={textareaClass}
-                                                value={content.cta.description}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        cta: { ...prev.cta, description: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Whatsapp (solo numero)</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.whatsappPhone}
-                                                onChange={(e) => updateContent((prev) => ({ ...prev, whatsappPhone: e.target.value }))}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-xs uppercase tracking-wide text-brand-gray">Instagram URL</label>
-                                            <input
-                                                className={inputClass}
-                                                value={content.footer.instagramUrl}
-                                                onChange={(e) =>
-                                                    updateContent((prev) => ({
-                                                        ...prev,
-                                                        footer: { ...prev.footer, instagramUrl: e.target.value },
-                                                    }))
-                                                }
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
+                                {/* ... todo tu código de Hero, Quienes Somos, CTA ... */}
                             </div>
                         )}
 
-                        {/* Resto de pestañas igual que en tu código original */}
-
                         {activeTab === 'services' && (
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[340px_1fr]">
-                                {/* ... tu código original de services ... */}
+                                {/* ... tu código de services ... */}
                             </div>
                         )}
 
                         {activeTab === 'technologies' && (
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
-                                {/* ... tu código original de technologies ... */}
+                                {/* ... tu código de technologies ... */}
                             </div>
                         )}
 
                         {activeTab === 'team' && (
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[340px_1fr]">
-                                {/* ... tu código original de team ... */}
+                                {/* ... tu código de team ... */}
                             </div>
                         )}
 
                         {activeTab === 'testimonials' && (
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
-                                {/* ... tu código original de testimonials ... */}
+                                {/* ... tu código de testimonials ... */}
                             </div>
                         )}
 
                         {activeTab === 'locations' && (
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
-                                {/* ... tu código original de locations ... */}
+                                {/* ... tu código de locations ... */}
                             </div>
                         )}
-
-                        {/* BOTÓN DE GUARDAR GLOBAL - FIJO EN LA PARTE SUPERIOR DERECHA */}
-                        <div className="mt-12 flex justify-end">
-                            <button
-                                type="button"
-                                onClick={handleSave}
-                                disabled={saveStatus === 'saving'}
-                                className={`px-8 py-4 rounded-lg text-white font-bold transition-all shadow-md ${
-                                    saveStatus === 'saving'
-                                        ? 'bg-gray-500 cursor-not-allowed'
-                                        : 'bg-green-600 hover:bg-green-700 active:bg-green-800'
-                                }`}
-                            >
-                                {saveStatus === 'saving' ? 'Guardando...' : 'Guardar Todos los Cambios'}
-                            </button>
-                        </div>
                     </section>
                 </div>
             </div>
