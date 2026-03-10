@@ -207,7 +207,13 @@ const App: React.FC = () => {
 
         return () => elements.forEach((el) => observer.unobserve(el));
     }, [selectedService, view]);
+useEffect(() => {
+    const interval = setInterval(() => {
+        window.location.reload();
+    }, 10000); // refresca cada 10 segundos
 
+    return () => clearInterval(interval);
+}, []);
     if (view === 'login') {
         return <AdminLogin />;
     }
