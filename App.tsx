@@ -54,14 +54,52 @@ const App: React.FC = () => {
     useEffect(() => {
     fetchAndApplyRemoteContent("bootstrap");
 }, []);
+    
 
-    const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
-        const { data, error } = await getSiteContent('home');
-        console.log("[supabase][site_content] getSiteContent('home')", {
-            source,
-            data,
-            error,
-        });
+const fetchAndApplyRemoteContent = useCallback(async (source: string) => {
+  const { data, error } = await getSiteContent('home');
+
+  console.log("[supabase][site_content] getSiteContent('home')", {
+    source,
+    data,
+    error,
+  });
+
+  if (!data?.content) return;
+
+  const remoteContent = ensureContentShape(data.content);
+  setSiteContent(remoteContent);
+  saveLocalSiteContent(remoteContent);
+
+}, []);
+    useEffect(() => {
+  fetchAndApplyRemoteContent("bootstrap");
+}, [fetchAndApplyRemoteContent]);
+
+useEffect(() => {
+  if (!supabase) return;
+
+  const channel = supabase
+    .channel("site_content_realtime")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "site_content",
+        filter: "id=eq.home"
+      },
+      () => {
+        console.log("Realtime update received");
+        fetchAndApplyRemoteContent("realtime");
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [fetchAndApplyRemoteContent]);
 
         if (!isMountedRef.current) {
             return { data, error };
