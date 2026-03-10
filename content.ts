@@ -144,16 +144,16 @@ export const ensureContentShape = (input: Partial<SiteContent> | null | undefine
     };
 };
 
+/**
+ * Carga el contenido inicial. 
+ * Se usa para el primer renderizado antes de que llegue la respuesta de Supabase.
+ */
 export const loadSiteContent = (): SiteContent => {
-    if (typeof window === 'undefined') {
-        return DEFAULT_SITE_CONTENT;
-    }
+    if (typeof window === 'undefined') return DEFAULT_SITE_CONTENT;
 
     try {
         const raw = window.localStorage.getItem(LOCAL_STORAGE_CONTENT_KEY);
-        if (!raw) {
-            return DEFAULT_SITE_CONTENT;
-        }
+        if (!raw) return DEFAULT_SITE_CONTENT;
 
         const parsed = JSON.parse(raw) as Partial<SiteContent>;
         return ensureContentShape(parsed);
@@ -162,18 +162,24 @@ export const loadSiteContent = (): SiteContent => {
     }
 };
 
+/**
+ * Guarda el contenido en LocalStorage.
+ * Se llama solo después de confirmar que los datos son válidos.
+ */
 export const saveSiteContent = (content: SiteContent): void => {
-    if (typeof window === 'undefined') {
-        return;
+    if (typeof window === 'undefined' || !content) return;
+    
+    // Solo guardamos si el objeto tiene propiedades reales para evitar limpiar el cache por error
+    if (Object.keys(content).length > 5) {
+        window.localStorage.setItem(LOCAL_STORAGE_CONTENT_KEY, JSON.stringify(content));
     }
-
-    window.localStorage.setItem(LOCAL_STORAGE_CONTENT_KEY, JSON.stringify(content));
 };
 
+/**
+ * Obtiene el contenido desde Supabase (La "Verdad" absoluta).
+ */
 export const loadSiteContentFromRemote = async (): Promise<SiteContent | null> => {
-    if (!supabase) {
-        return null;
-    }
+    if (!supabase) return null;
 
     const { data, error } = await supabase
         .from('site_content')
@@ -181,26 +187,23 @@ export const loadSiteContentFromRemote = async (): Promise<SiteContent | null> =
         .in('id', [REMOTE_SITE_CONTENT_ROW_ID, LEGACY_REMOTE_SITE_CONTENT_ROW_ID])
         .order('updated_at', { ascending: false, nullsFirst: false });
 
-    if (error || !data?.length) {
-        return null;
-    }
+    if (error || !data?.length) return null;
 
     const preferredRow =
         data.find((row) => row.id === REMOTE_SITE_CONTENT_ROW_ID) ??
         data.find((row) => row.id === LEGACY_REMOTE_SITE_CONTENT_ROW_ID) ??
         data[0];
 
-    if (!preferredRow?.content) {
-        return null;
-    }
+    if (!preferredRow?.content) return null;
 
     return ensureContentShape(preferredRow.content as Partial<SiteContent>);
 };
 
+/**
+ * Guarda el contenido en Supabase.
+ */
 export const saveSiteContentToRemote = async (content: SiteContent): Promise<boolean> => {
-    if (!supabase) {
-        return false;
-    }
+    if (!supabase) return false;
 
     const { error } = await supabase.from('site_content').upsert(
         {
@@ -218,9 +221,10 @@ export const resetSiteContent = (): SiteContent => {
     if (typeof window !== 'undefined') {
         window.localStorage.removeItem(LOCAL_STORAGE_CONTENT_KEY);
     }
-
     return DEFAULT_SITE_CONTENT;
 };
+
+// --- Templates para nuevos elementos ---
 
 export const emptyServiceTemplate = (nextId: number): Service => ({
     id: nextId,
